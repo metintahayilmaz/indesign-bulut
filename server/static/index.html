@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InDesign Bulut</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <a href="#/" class="brand">InDesign <b>Bulut</b></a>
+    <div id="status" class="status"></div>
+    <button id="settingsBtn" class="ghost" title="Ayarlar">⚙</button>
+  </header>
+  <main id="view"></main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h3>Ayarlar</h3>
+      <label>Erişim anahtarı (APP_TOKEN)<input id="tokenInput" type="password" autocomplete="off"></label>
+      <label>Adınız (geçmişte yazar olarak görünür)<input id="userInput"></label>
+      <menu><button value="cancel" class="ghost">Vazgeç</button><button value="ok" id="settingsSave">Kaydet</button></menu>
+    </form>
+  </dialog>
+  <div id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

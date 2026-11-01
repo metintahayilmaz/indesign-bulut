@@ -23,7 +23,33 @@ InDesign belgelerinizi tarayıcıdan ve Claude Code ile bulutta yönetin: **meti
 - **PDF çıktısı.** InDesign ön ayarlarıyla (High Quality Print, Press Quality, PDF/X-4…) alınır.
 - **Arşiv aktarımı.** `Toplu_INDD_to_IDML.jsx` ile klasör klasör dönüştürüp `agent.py upload` ile toplu yükleyebilirsiniz.
 
-## 1. Sunucuyu kurun
+## Hızlı başlangıç: kendi bilgisayarınızda (önerilen)
+
+Sunucu kiralamanız gerekmez. Panel ve InDesign ajanı, InDesign'ın kurulu olduğu bilgisayarda birlikte çalışır.
+
+1. **Python 3.9+** kurun: https://www.python.org/downloads/ (Windows'ta kurulum sırasında *Add python.exe to PATH* kutusunu işaretleyin).
+2. Bu depoyu indirin: GitHub'da **Code → Download ZIP**, ardından ZIP'i açın (veya `git clone`).
+3. InDesign'ı en az bir kez açıp kapatın, sonra başlatıcıya çift tıklayın:
+   - macOS: **`Baslat (Mac).command`** (ilk seferde *sağ tık → Aç* deyin; Gatekeeper uyarısını geçmek için)
+   - Windows: **`Baslat (Windows).bat`**
+
+İlk açılışta gerekli paketler kurulur (yaklaşık 1 dakika). InDesign başlangıç script'i otomatik olarak yerleştirilir ve panel tarayıcıda `http://127.0.0.1:8000` adresinde açılır. **InDesign'ı yeniden başlatın.** Panelin sağ üstünde *InDesign ajanı* yeşil görünmelidir.
+
+- Pencere açık kaldığı sürece panel çalışır. Pencereyi kapatınca durur.
+- Veriler (sürüm geçmişi, PDF'ler) `Belgeler/InDesignBulut/veri` klasöründe durur. Bu klasörü yedeklemeniz yeterlidir.
+- **Claude sekmesi** için Claude Code'u bir kez kurup giriş yapın: [Node.js](https://nodejs.org) kurun, ardından terminalde aşağıdaki komutu çalıştırın ve sonra `claude` yazıp hesabınızla giriş yapın.
+  ```bash
+  npm install -g @anthropic-ai/claude-code
+  ```
+- **Başka cihazdan erişmek** (telefon, ikinci bilgisayar) için başlatıcıyı `--paylas` ile çalıştırın. Bu mod bir erişim anahtarı üretip ekrana yazar.
+  ```bash
+  python3 yerel.py --paylas
+  ```
+  Aynı ağdaysanız ekrandaki adres yeterlidir. Ev/ofis dışından erişim için [Tailscale](https://tailscale.com) (ücretsiz) kurup bilgisayarınızın Tailscale adresini kullanın.
+
+## Alternatif: bulut sunucusu (7/24 erişim)
+
+Bilgisayarınız kapalıyken de panele erişmek isterseniz sunucuyu bir VPS'e kurun. Ajan yine InDesign'lı bilgisayarda çalışır ve sunucuya bağlanır.
 
 ### Docker ile
 ```bash
@@ -54,7 +80,7 @@ DATA_DIR=./data APP_TOKEN=uzun-gizli-anahtar uvicorn server.app:app --host 0.0.0
 | `CLAUDE_MODEL`, `CLAUDE_TIMEOUT` | İsteğe bağlı model ve görev zaman aşımı (saniye, varsayılan 1800) |
 | `MAX_UPLOAD_MB` | Yükleme sınırı (varsayılan 500) |
 
-## 2. InDesign ajanını kurun (Mac veya Windows)
+### Ajanı bulut sunucusuna bağlama (Mac veya Windows)
 
 1. `agent/indesign/InDesignBulut_startup.jsx` dosyasını InDesign'ın **Startup Scripts** klasörüne kopyalayın:
    - macOS: `~/Library/Preferences/Adobe InDesign/<sürüm>/<dil>/Scripts/Startup Scripts/`
@@ -75,7 +101,7 @@ InDesign'da *Script'ler* panelinden `Toplu_INDD_to_IDML.jsx` çalıştırıp bir
 python3 agent/agent.py --server https://sunucu-adresi --token uzun-gizli-anahtar upload ~/Arsiv
 ```
 
-## 3. Claude Code ile doğrudan çalışma
+## Claude Code ile doğrudan çalışma
 Panel dışında, bu repo üzerinde Claude Code ile de çalışabilirsiniz (ayrıntılar `CLAUDE.md` dosyasında):
 ```bash
 python3 -m idmlkit text katalog.idml
@@ -95,6 +121,9 @@ Sunucudaki belgeler `DATA_DIR/repo/documents/<belge>/idml/` altında açılmış
 - Aynı paragrafı iki kişi aynı anda düzenlerse ikinci kayıt reddedilir (çakışma uyarısı) ve sayfayı yenilemeniz gerekir.
 
 ## Geliştirme
+```bash
+pip install -r requirements-dev.txt
+```
 ```bash
 python3 -m pytest -q
 ```

@@ -5,6 +5,7 @@ Bu repo, InDesign belgelerini bulutta yönetmek için bir web paneli, `idmlkit` 
 ## Mimari
 - `idmlkit/` — IDML (InDesign Markup, ZIP içinde XML) okuma/yazma. `.indd` ikili formatı Linux'ta açılamaz; tüm metin işlemleri IDML üzerinde yapılır.
 - `server/` — FastAPI. `storage.py` belgeleri git deposunda *açılmış IDML* olarak tutar (her kayıt bir commit). `jobs.py` masaüstü ajan kuyruğu, `ai.py` panelden gelen talimatları `claude -p` ile çalıştırır.
+- `yerel.py` + `Baslat (Mac).command` / `Baslat (Windows).bat` — paneli ve ajanı aynı bilgisayarda tek süreçte başlatır, InDesign script'ini kurar (önerilen kurulum).
 - `agent/` — Kullanıcının bilgisayarında çalışır: `agent.py` (Python stdlib) işleri sıcak klasöre bırakır, `indesign/InDesignBulut_startup.jsx` InDesign içinde PDF/IDML dışa aktarır.
 
 ## IDML belgeleri üzerinde çalışırken
@@ -26,7 +27,7 @@ python3 -m idmlkit replace <belge> "eski" "yeni" [--regex] [-i]
 
 ## Geliştirme
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python3 -m pytest -q
 DATA_DIR=./data uvicorn server.app:app --reload
 ```

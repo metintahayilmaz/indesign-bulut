@@ -67,6 +67,23 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 #toast { position: fixed; top: 70px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
 #toast div { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 360px; font-size: 14px; }
 #toast div.err { background: var(--err); color: #fff; }
+.badge.design { background: var(--accent); color: var(--accent-ink); vertical-align: middle; }
+.newdesign { margin-bottom: 8px; }
+.design-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.small-drop { padding: 16px; margin: 10px 0; font-size: 14px; }
+.list.compact li { padding: 6px 0; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
+.thumbs figure { margin: 0; position: relative; font-size: 11px; word-break: break-all; }
+.thumbs img, .thumbs .noimg { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: var(--bg); display: grid; place-items: center; color: var(--muted); }
+.thumbs figure button { position: absolute; top: 3px; right: 3px; padding: 0 6px; background: var(--panel); }
+button.xs, .btn.xs { padding: 4px 9px; font-size: 13px; }
+.previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+.previews a { color: var(--muted); text-decoration: none; font-size: 12px; text-align: center; }
+.previews img { width: 100%; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.08); background: #fff; display: block; margin-bottom: 4px; }
+.issues { margin-top: 10px; font-size: 14px; } .issues summary { cursor: pointer; color: var(--warn); }
+.warn { color: var(--err); } .ok { color: var(--ok); }
+details summary { cursor: pointer; }
+@media (max-width: 860px) { .design-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
   .para { grid-template-columns: 1fr; gap: 2px; }
   header { padding: 10px 16px; }

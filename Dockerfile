@@ -7,6 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY idmlkit ./idmlkit
 COPY server ./server
+COPY tasarim ./tasarim
 COPY CLAUDE.md ./
 RUN useradd -m app && mkdir -p /data && chown app /data
 USER app

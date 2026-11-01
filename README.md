@@ -47,6 +47,31 @@ Sunucu kiralamanız gerekmez. Panel ve InDesign ajanı, InDesign'ın kurulu oldu
   ```
   Aynı ağdaysanız ekrandaki adres yeterlidir. Ev/ofis dışından erişim için [Tailscale](https://tailscale.com) (ücretsiz) kurup bilgisayarınızın Tailscale adresini kullanın.
 
+## Dergi sayfası tasarımı
+
+Boş dergi sayfanızı şablon olarak verirsiniz. Claude yazı ve görsellerinizi **şablonun stillerine, ana sayfalarına (vinyetlerine) ve kenar boşluklarına sadık kalarak** yeni sayfalara yerleştirir. Sonuç, Mac'inizdeki InDesign'da kurulan, düzenlenebilir bir `.indd` dosyasıdır.
+
+### Şablonu hazırlama (bir kez)
+1. Boş dergi sayfanızı açın. Paragraf, karakter ve nesne stilleri, renk örnekleri, ana sayfalar, kenar boşlukları ve sütunlar tanımlı olmalı. Sayfaların kendisi boş olabilir.
+2. **Vinyetleri adlandırın.** Değişken metin içeren ana sayfa çerçevelerine (bölüm adı, sayı/tarih gibi) *Katmanlar* panelinde anlamlı bir ad verin: `vinyet-bolum`, `vinyet-sayi` gibi. Claude bu adlarla her sayfanın vinyetini doldurur. Sayfa numarası gibi otomatik öğelere dokunulmaz.
+3. Stillere anlamlı adlar verin (`Manşet`, `Spot`, `Gövde`, `Gövde İlk`, `Ara Başlık`, `Görsel Altı`, `Alıntı`…). Claude stilleri adlarından tanır.
+4. `.indd` dosyasını panele yükleyin. Ajan IDML'e çevirir ve orijinal `.indd` saklanır. Sayfalar her zaman bu orijinal şablondan kurulur.
+
+### Tasarlama
+1. Ana sayfada **Yeni dergi sayfası tasarla** bölümünde bir ad yazıp şablonu seçin.
+2. **Tasarım** sekmesinde yazıları (.docx, .txt, .md) ve görselleri (.jpg, .png, .tif, .psd) yükleyin.
+3. İsteğinizi yazın. Örnek: *"Röportajı 4 sayfaya yerleştir; 34. sayfadan başlıyor, açılışta tam sayfa portre, bir sayfada alıntı kutusu."*
+4. Claude şunları yapar:
+   - şablon profilini ve varlıkları inceler,
+   - bir yerleşim planı yazar ve şablona uygunluğunu kontrol eder,
+   - planı InDesign'da kurar,
+   - önizlemelere bakıp taşan metin ve düşük çözünürlük gibi sorunları düzeltir.
+
+   Birkaç dakika sürer.
+5. Sonucu önizlemelerden inceleyin, `.indd` veya PDF olarak indirin. Düzeltme için yeni bir istek yazın, örneğin *"2. sayfadaki görseli büyüt"*. Claude planı baştan yazmadan yalnızca istenen kısmı değiştirir.
+
+Görseller InDesign belgesine **bağlantı** olarak yerleşir ve `Belgeler/InDesignBulut/tasarimlar/<tasarım>/gorseller` klasöründe durur. Bu klasörü silmeyin.
+
 ## Alternatif: bulut sunucusu (7/24 erişim)
 
 Bilgisayarınız kapalıyken de panele erişmek isterseniz sunucuyu bir VPS'e kurun. Ajan yine InDesign'lı bilgisayarda çalışır ve sunucuya bağlanır.

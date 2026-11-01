@@ -17,12 +17,14 @@ import argparse
 import json
 import os
 import platform
+import shutil
 import socket
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 DEFAULT_HOT = Path.home() / "Documents" / "InDesignBulut"
@@ -66,6 +68,8 @@ class Client:
 def process(client: Client, job: dict, hot: Path) -> None:
     inbox, outbox = hot / "inbox", hot / "outbox"
     jid, kind = job["id"], job["kind"]
+    if kind == "layout":
+        return process_layout(client, job, hot)
     in_ext, out_ext = (".idml", ".pdf") if kind == "pdf" else (".indd", ".idml")
     src = inbox / f"{jid}{in_ext}"
     print(f"[{time.strftime('%H:%M:%S')}] İş {jid[:8]} ({kind}, belge: {job['doc']}) indiriliyor…")
@@ -95,6 +99,68 @@ def process(client: Client, job: dict, hot: Path) -> None:
         print("    zaman aşımı")
     for f in (src, inbox / f"{jid}.json", out, err):
         f.unlink(missing_ok=True)
+
+
+def safe_name(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in name) or "belge"
+
+
+def process_layout(client: Client, job: dict, hot: Path) -> None:
+    """Tasarım işi: paket (şablon + layout.json + görseller) kalıcı bir klasöre açılır; görseller InDesign
+    belgesine bağlantı olarak yerleştiği için bu klasör silinmez: Belgeler/InDesignBulut/tasarimlar/<belge>/"""
+    jid = job["id"]
+    inbox, outbox = hot / "inbox", hot / "outbox"
+    work = hot / "tasarimlar" / safe_name(job["doc"])
+    (work / "gorseller").mkdir(parents=True, exist_ok=True)
+    print(f"[{time.strftime('%H:%M:%S')}] Tasarım işi {jid[:8]} (belge: {job['doc']}) indiriliyor…")
+    bundle = inbox / f"{jid}.zip"
+    client.download(f"/api/agent/jobs/{jid}/input", bundle)
+    for old in ("sablon.indd", "sablon.idml", "layout.json"):
+        (work / old).unlink(missing_ok=True)
+    with zipfile.ZipFile(bundle) as z:
+        for info in z.infolist():
+            parts = Path(info.filename).parts
+            if info.is_dir() or ".." in parts or not parts:
+                continue
+            target = work.joinpath(*parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(z.read(info))
+    bundle.unlink(missing_ok=True)
+    template = work / ("sablon.indd" if (work / "sablon.indd").exists() else "sablon.idml")
+    outdir = outbox / jid
+    shutil.rmtree(outdir, ignore_errors=True)
+    outdir.mkdir(parents=True)
+    tmp = inbox / f"{jid}.json.tmp"
+    tmp.write_text(json.dumps({"id": jid, "kind": "layout", "template": template.as_posix(),
+                               "spec": (work / "layout.json").as_posix(), "assets": (work / "gorseller").as_posix(),
+                               "outdir": outdir.as_posix(), "preset": "[High Quality Print]"}), encoding="utf-8")
+    tmp.rename(inbox / f"{jid}.json")
+
+    done, err = outbox / f"{jid}.done", outbox / f"{jid}.error.txt"
+    deadline = time.time() + JOB_TIMEOUT
+    while time.time() < deadline:
+        if done.exists():
+            result = outbox / f"{jid}-sonuc.zip"
+            with zipfile.ZipFile(result, "w", zipfile.ZIP_DEFLATED) as z:
+                for f in sorted(outdir.iterdir()):
+                    z.write(f, f.name)
+            client.upload(f"/api/agent/jobs/{jid}/complete", result)
+            print(f"    tamamlandı -> {len(list(outdir.iterdir()))} dosya yüklendi")
+            result.unlink(missing_ok=True)
+            break
+        if err.exists():
+            msg = err.read_text(encoding="utf-8", errors="replace")
+            client.json("POST", f"/api/agent/jobs/{jid}/fail", {"error": f"InDesign: {msg}"})
+            print(f"    HATA: {msg}")
+            break
+        time.sleep(2)
+    else:
+        client.json("POST", f"/api/agent/jobs/{jid}/fail",
+                    {"error": "InDesign zamanında yanıt vermedi. InDesign açık mı, başlangıç script'i güncel mi?"})
+        print("    zaman aşımı")
+    for f in (inbox / f"{jid}.json", done, err):
+        f.unlink(missing_ok=True)
+    shutil.rmtree(outdir, ignore_errors=True)
 
 
 def run(args) -> None:

@@ -178,16 +178,40 @@ class Storage:
             return self.commit(f"{rev[:8]} sürümüne geri dönüldü", [self.rel(slug)], author)
 
     # --- git dışı dosyalar ---------------------------------------------
-    def file_path(self, slug: str, name: str) -> Path:
-        if "/" in name or name.startswith("."):
-            raise KeyError(name)
-        d = self.files_dir / slug
-        d.mkdir(parents=True, exist_ok=True)
-        return d / name
+    SUBDIRS = ("cikti", "varliklar")
 
-    def list_files(self, slug: str) -> list[dict]:
-        d = self.files_dir / slug
+    def file_path(self, slug: str, name: str) -> Path:
+        """Git dışı dosya yolu. `name` düz bir ad ya da `cikti/ad`, `varliklar/ad` olabilir."""
+        parts = name.split("/")
+        if len(parts) > 2 or (len(parts) == 2 and parts[0] not in self.SUBDIRS) \
+                or any(not p or p.startswith(".") or "\\" in p for p in parts) or not re.fullmatch(r"[a-z0-9-]+", slug):
+            raise KeyError(name)
+        d = self.files_dir / slug / (parts[0] if len(parts) == 2 else "")
+        d.mkdir(parents=True, exist_ok=True)
+        return d / parts[-1]
+
+    def list_files(self, slug: str, sub: str | None = None) -> list[dict]:
+        d = self.files_dir / slug / (sub or "")
         if not d.exists():
             return []
         return [{"name": f.name, "size": f.stat().st_size, "time": f.stat().st_mtime}
-                for f in sorted(d.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)]
+                for f in sorted(d.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True) if f.is_file()]
+
+    # --- tasarımlar -----------------------------------------------------
+    def create_design(self, name: str, template: str, author: str | None = None) -> dict:
+        """Şablonun kopyası olarak yeni bir tasarım belgesi oluşturur."""
+        with _lock:
+            tmeta = self.meta(template)
+            base = slugify(name)
+            slug, i = base, 2
+            while (self.repo / "documents" / slug).exists():
+                slug, i = f"{base}-{i}", i + 1
+            d = self.repo / "documents" / slug
+            shutil.copytree(self.idml_dir(template), d / "idml")
+            now = time.time()
+            meta = {"slug": slug, "name": name.strip() or slug, "kind": "design", "template": template,
+                    "template_name": tmeta.get("name"), "filename": f"{slug}.idml", "created": now, "updated": now,
+                    "info": IdmlDocument.open(d / "idml").info()}
+            self._write_meta(slug, meta)
+            self.commit(f"Tasarım oluşturuldu: {meta['name']} (şablon: {tmeta.get('name')})", [self.rel(slug)], author)
+            return meta

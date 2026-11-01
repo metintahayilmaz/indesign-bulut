@@ -4,9 +4,13 @@
 """
 from __future__ import annotations
 
+import io
+import json
 import os
 import secrets
+import shutil
 import time
+import zipfile
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -187,7 +191,7 @@ def request_pdf(slug: str, request: Request, body: PdfBody | None = None, user=D
     return {"job": job}
 
 
-@app.get("/api/documents/{slug}/files/{name}")
+@app.get("/api/documents/{slug}/files/{name:path}")
 def get_file(slug: str, name: str, request: Request, user=Depends(auth)):
     p = nf(get_state(request).storage.file_path, slug, name)
     if not p.exists():
@@ -212,6 +216,147 @@ def ai_start(slug: str, body: AiBody, request: Request, user=Depends(auth)):
 @app.get("/api/documents/{slug}/ai")
 def ai_list(slug: str, request: Request, user=Depends(auth)):
     return {"tasks": get_state(request).tasks.list(slug)}
+
+
+
+# --- tasarım (şablona sadık sayfa kurulumu) -------------------------------
+def design_ctx(st, slug):
+    from tasarim import DesignContext
+    nf(st.storage.doc_dir, slug)
+    return DesignContext(st.storage.root.resolve(), slug)
+
+
+class DesignBody(BaseModel):
+    name: str
+    template: str
+
+
+@app.post("/api/designs")
+def create_design(body: DesignBody, request: Request, user=Depends(auth)):
+    st = get_state(request)
+    if not body.name.strip():
+        raise HTTPException(400, "Tasarım adı boş")
+    return {"document": nf(st.storage.create_design, body.name, body.template, author=user)}
+
+
+@app.get("/api/documents/{slug}/profile")
+def template_profile(slug: str, request: Request, user=Depends(auth)):
+    from idmlkit.profile import build_profile, summarize
+    doc = nf(get_state(request).storage.open_doc, slug)
+    prof = build_profile(doc)
+    return {"profile": prof, "summary": summarize(prof)}
+
+
+@app.get("/api/documents/{slug}/design")
+def design_state(slug: str, request: Request, user=Depends(auth)):
+    st = get_state(request)
+    ctx = design_ctx(st, slug)
+    layout, validation = None, None
+    if ctx.layout_path.exists():
+        try:
+            layout = json.loads(ctx.layout_path.read_text(encoding="utf-8"))
+            validation = ctx.validate(layout)
+            validation.pop("pages", None)
+        except Exception as e:  # noqa: BLE001
+            validation = {"errors": [f"layout.json okunamadı: {e}"], "warnings": []}
+    report = None
+    rp = ctx.output_dir / "rapor.json"
+    if rp.exists():
+        try:
+            report = json.loads(rp.read_text(encoding="utf-8"))
+        except ValueError:
+            report = None
+    previews = sorted((f["name"] for f in st.storage.list_files(slug, "cikti") if f["name"].endswith(".png")),
+                      key=lambda n: int("".join(c for c in n if c.isdigit()) or 0))
+    outputs = [f for f in st.storage.list_files(slug, "cikti") if not f["name"].endswith((".png", ".json"))]
+    return {"layout": layout, "validation": validation, "report": report, "previews": previews,
+            "outputs": outputs, "assets": ctx.assets(), "template": ctx.meta().get("template")}
+
+
+@app.post("/api/documents/{slug}/assets")
+async def upload_assets(slug: str, request: Request, files: list[UploadFile] = File(...), user=Depends(auth)):
+    from tasarim.assets import IMAGE_EXT, TEXT_EXT
+    st = get_state(request)
+    nf(st.storage.doc_dir, slug)
+    saved, rejected = [], []
+    for f in files:
+        name = Path(f.filename or "").name
+        if not name or Path(name).suffix.lower() not in IMAGE_EXT | TEXT_EXT:
+            rejected.append(name)
+            continue
+        data = await f.read()
+        if len(data) > MAX_UPLOAD:
+            rejected.append(name)
+            continue
+        nf(st.storage.file_path, slug, f"varliklar/{name}").write_bytes(data)
+        saved.append(name)
+    return {"saved": saved, "rejected": rejected}
+
+
+@app.delete("/api/documents/{slug}/assets/{name}")
+def delete_asset(slug: str, name: str, request: Request, user=Depends(auth)):
+    p = nf(get_state(request).storage.file_path, slug, f"varliklar/{name}")
+    p.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.post("/api/documents/{slug}/render")
+def render_design(slug: str, request: Request, user=Depends(auth)):
+    """Mevcut layout.json'u InDesign'da yeniden oluştur."""
+    st = get_state(request)
+    ctx = design_ctx(st, slug)
+    if not ctx.layout_path.exists():
+        raise HTTPException(400, "Henüz yerleşim planı yok")
+    spec = json.loads(ctx.layout_path.read_text(encoding="utf-8"))
+    res = ctx.validate(spec)
+    if res["errors"]:
+        return JSONResponse({"ok": False, "errors": res["errors"]}, status_code=409)
+    job = st.jobs.create("layout", slug, spec=spec, template=ctx.template_slug(), author=user)
+    return {"job": job}
+
+
+def layout_bundle(st, job) -> bytes:
+    """InDesign'a giden paket: şablon (.indd varsa o, yoksa IDML), layout.json, görseller."""
+    from tasarim import DesignContext
+    spec, template = job["params"]["spec"], job["params"]["template"]
+    ctx = DesignContext(st.storage.root.resolve(), job["doc"])
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        indd = st.storage.files_dir / template / "original.indd"
+        if indd.exists():
+            z.write(indd, "sablon.indd")
+        else:
+            z.writestr("sablon.idml", st.storage.open_doc(template).to_bytes())
+        z.writestr("layout.json", json.dumps(spec, ensure_ascii=False))
+        wanted = {fr.get("image") for pg in spec.get("pages", []) for fr in pg.get("frames", []) if fr.get("type") == "image"}
+        for name in sorted(n for n in wanted if n):
+            p = ctx.assets_dir / name
+            if p.exists():
+                z.write(p, f"gorseller/{name}")
+    return buf.getvalue()
+
+
+def finish_layout(st, job, data: bytes) -> dict:
+    from tasarim import DesignContext
+    ctx = DesignContext(st.storage.root.resolve(), job["doc"])
+    out = ctx.output_dir
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for info in z.infolist():
+            name = Path(info.filename).name
+            if info.is_dir() or not name or name.startswith("."):
+                continue
+            (out / name).write_bytes(z.read(info))
+    report = {}
+    if (out / "rapor.json").exists():
+        report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))
+    idml = out / "tasarim.idml"
+    if idml.exists():
+        st.storage.add_document(f"{job['doc']}.idml", idml.read_bytes(), author="InDesign", slug=job["doc"])
+    previews = sorted((p.name for p in out.glob("*.png")), key=lambda n: int("".join(c for c in n if c.isdigit()) or 0))
+    return {"report": report, "previews": previews, "files": sorted(p.name for p in out.iterdir())}
 
 
 # --- masaüstü ajan API'si -------------------------------------------------
@@ -239,6 +384,9 @@ def agent_input(job_id: str, request: Request, user=Depends(auth)):
                         headers={"Content-Disposition": f'attachment; filename="{job["doc"]}.idml"'})
     if job["kind"] == "indd_to_idml":
         return FileResponse(st.storage.file_path(job["doc"], "original.indd"), filename=f'{job["doc"]}.indd')
+    if job["kind"] == "layout":
+        return Response(layout_bundle(st, job), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{job["doc"]}-paket.zip"'})
     raise HTTPException(400, "Bilinmeyen iş türü")
 
 
@@ -260,6 +408,12 @@ async def agent_complete(job_id: str, request: Request, file: UploadFile = File(
         except Exception as e:  # noqa: BLE001
             return {"job": st.jobs.finish(job_id, error=f"Ajanın gönderdiği IDML okunamadı: {e}")}
         return {"job": st.jobs.finish(job_id, result={"document": meta["slug"], "new": not exists})}
+    if job["kind"] == "layout":
+        try:
+            result = finish_layout(st, job, data)
+        except Exception as e:  # noqa: BLE001
+            return {"job": st.jobs.finish(job_id, error=f"InDesign çıktısı işlenemedi: {e}")}
+        return {"job": st.jobs.finish(job_id, result=result)}
     raise HTTPException(400, "Bilinmeyen iş türü")
 
 

@@ -37,8 +37,33 @@ Kullanıcının talimatı:
 4. Sonunda Türkçe, kısa bir özet yaz: neyi değiştirdin, kaç paragraf etkilendi, varsa sorunlar.
 """
 
+DESIGN_PROMPT = """Sen deneyimli bir dergi sayfa tasarımcısısın. Bu klasör bir tasarım belgesidir. Görevin, kullanıcının
+yazı ve görsellerinden, şablonun stillerine, ana sayfalarına (vinyetlerine) ve kenar boşluklarına SADIK kalarak
+dergi sayfaları kurmak. Sayfaları sen çizmezsin: `layout.json` yerleşim planını yazarsın, InDesign onu kurar.
+
+Kullanıcının isteği:
+---
+{instruction}
+---
+
+Çalışma yöntemi:
+1. `python3 -m tasarim kurallar` ile plan biçimini oku (bir kez).
+2. `python3 -m tasarim profil` ile şablonu incele: sayfa ölçüsü, ızgara, ana sayfalar, vinyet çerçeve adları, stiller, renkler.
+3. `python3 -m tasarim varliklar` ile yazıları/görselleri listele; yazıları `python3 -m tasarim metin <ad>` ile oku.
+   Görsellerin içeriğini görmek için Read aracıyla varlık klasöründeki dosyalara bak (kompozisyon, yön, odak noktası).
+4. Varsa mevcut `layout.json`'u oku: kullanıcı bir düzeltme istiyorsa planı baştan yazma, yalnızca isteneni değiştir.
+5. `layout.json`'u Write/Edit ile yaz. Yalnızca profildeki stil, renk ve ana sayfa adlarını kullan; metni kısaltma
+   veya değiştirme (kullanıcı istemedikçe) — başlık, spot, ara başlık ve görsel altı yazılarını yazıdan çıkar.
+6. `python3 -m tasarim dogrula` — hataları düzelt, uyarıları değerlendir.
+7. `python3 -m tasarim olustur` — InDesign sayfaları kurar ve rapor + önizleme PNG yolları döner.
+   Önizlemelere Read ile bak. Taşan metin, boş kalan alan, kötü kırpılmış görsel, dengesiz yerleşim varsa planı
+   düzeltip yeniden oluştur (en fazla 4 tur). Taşma varsa sayfa ekle veya görseli küçült; metni silme.
+8. Sonunda Türkçe kısa özet: kaç sayfa, hangi ana sayfalar, yerleşim kararların, kalan uyarılar.
+InDesign ajanı çevrimdışıysa (olustur hata verirse) planı doğrulanmış halde bırak ve bunu söyle.
+"""
+
 ALLOWED_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep",
-                 "Bash(python3 -m idmlkit:*)", "Bash(rm segments.json)"]
+                 "Bash(python3 -m idmlkit:*)", "Bash(rm segments.json)", "Bash(python3 -m tasarim:*)"]
 
 
 def claude_available() -> bool:
@@ -79,10 +104,16 @@ class TaskRunner:
         with lock:
             try:
                 cwd = self.storage.doc_dir(task["doc"])
-                env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
-                cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", PROMPT.format(instruction=task["instruction"]),
+                env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "DATA_DIR": str(self.storage.root.resolve())}
+                design = self.storage.meta(task["doc"]).get("kind") == "design"
+                prompt = (DESIGN_PROMPT if design else PROMPT).format(instruction=task["instruction"])
+                cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
                        "--output-format", "json", "--permission-mode", "acceptEdits",
                        "--allowedTools", *ALLOWED_TOOLS]
+                if design:
+                    files = self.storage.files_dir / task["doc"]
+                    files.mkdir(parents=True, exist_ok=True)
+                    cmd += ["--add-dir", str(files.resolve())]
                 if os.environ.get("CLAUDE_MODEL"):
                     cmd += ["--model", os.environ["CLAUDE_MODEL"]]
                 r = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True,
